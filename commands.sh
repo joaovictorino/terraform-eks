@@ -1,1 +1,1 @@
-aws eks --region example_region update-kubeconfig --name cluster_name
+aws eks --region us-east-1 update-kubeconfig --name terraform-eks-demo
