@@ -3,32 +3,13 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region
+  region = "us-east-1"
 }
 
 data "aws_availability_zones" "available" {}
 
-# Not required: currently used in conjunction with using
-# icanhazip.com to determine local workstation external IP
-# to open EC2 Security Group access to the Kubernetes cluster.
-# See workstation-external-ip.tf for additional information.
-provider "http" {}
-
-#
-# VPC Resources
-#  * VPC
-#  * Subnets
-#  * Internet Gateway
-#  * Route Table
-#
-
 resource "aws_vpc" "demo" {
   cidr_block = "10.0.0.0/16"
-
-  tags = tomap({
-    "Name"                                      = "terraform-eks-demo-node",
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared",
-  })
 }
 
 resource "aws_subnet" "demo" {
@@ -38,43 +19,17 @@ resource "aws_subnet" "demo" {
   cidr_block              = "10.0.${count.index}.0/24"
   map_public_ip_on_launch = true
   vpc_id                  = aws_vpc.demo.id
-
-  tags = tomap({
-    "Name"                                      = "terraform-eks-demo-node",
-    "kubernetes.io/cluster/${var.cluster_name}" = "shared",
-  })
 }
 
 resource "aws_internet_gateway" "demo" {
   vpc_id = aws_vpc.demo.id
-
-  tags = {
-    Name = "terraform-eks-demo"
-  }
 }
 
-resource "aws_route_table" "demo" {
-  vpc_id = aws_vpc.demo.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.demo.id
-  }
+resource "aws_route" "rt-aula" {
+  route_table_id         = aws_vpc.demo.main_route_table_id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.demo.id
 }
-
-resource "aws_route_table_association" "demo" {
-  count = 2
-
-  subnet_id      = aws_subnet.demo[count.index].id
-  route_table_id = aws_route_table.demo.id
-}
-
-#
-# EKS Cluster Resources
-#  * IAM Role to allow EKS service to manage other AWS services
-#  * EC2 Security Group to allow networking traffic with EKS cluster
-#  * EKS Cluster
-#
 
 resource "aws_iam_role" "demo-cluster" {
   name = "terraform-eks-demo-cluster"
@@ -107,7 +62,6 @@ resource "aws_iam_role_policy_attachment" "demo-cluster-AmazonEKSVPCResourceCont
 
 resource "aws_security_group" "demo-cluster" {
   name        = "terraform-eks-demo-cluster"
-  description = "Cluster communication with worker nodes"
   vpc_id      = aws_vpc.demo.id
 
   egress {
@@ -116,15 +70,10 @@ resource "aws_security_group" "demo-cluster" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = {
-    Name = "terraform-eks-demo"
-  }
 }
 
 resource "aws_security_group_rule" "demo-cluster-ingress-workstation-https" {
-  cidr_blocks       = [local.workstation-external-cidr]
-  description       = "Allow workstation to communicate with the cluster API Server"
+  cidr_blocks       = ["0.0.0.0/0"]
   from_port         = 443
   protocol          = "tcp"
   security_group_id = aws_security_group.demo-cluster.id
@@ -133,7 +82,7 @@ resource "aws_security_group_rule" "demo-cluster-ingress-workstation-https" {
 }
 
 resource "aws_eks_cluster" "demo" {
-  name     = var.cluster_name
+  name     = "terraform-demo-eks"
   role_arn = aws_iam_role.demo-cluster.arn
 
   vpc_config {
@@ -146,12 +95,6 @@ resource "aws_eks_cluster" "demo" {
     aws_iam_role_policy_attachment.demo-cluster-AmazonEKSVPCResourceController,
   ]
 }
-
-#
-# EKS Worker Nodes Resources
-#  * IAM role allowing Kubernetes actions to access other AWS services
-#  * EKS Node Group to launch worker nodes
-#
 
 resource "aws_iam_role" "demo-node" {
   name = "terraform-eks-demo-node"
@@ -194,8 +137,8 @@ resource "aws_eks_node_group" "demo" {
   subnet_ids      = aws_subnet.demo[*].id
 
   scaling_config {
-    desired_size = 1
-    max_size     = 1
+    desired_size = 2 
+    max_size     = 2
     min_size     = 1
   }
 
@@ -204,32 +147,4 @@ resource "aws_eks_node_group" "demo" {
     aws_iam_role_policy_attachment.demo-node-AmazonEKS_CNI_Policy,
     aws_iam_role_policy_attachment.demo-node-AmazonEC2ContainerRegistryReadOnly,
   ]
-}
-
-#
-# Workstation External IP
-#
-# This configuration is not required and is
-# only provided as an example to easily fetch
-# the external IP of your local workstation to
-# configure inbound EC2 Security Group access
-# to the Kubernetes cluster.
-#
-
-data "http" "workstation-external-ip" {
-  url = "http://ipv4.icanhazip.com"
-}
-
-# Override with variable or hardcoded value if necessary
-locals {
-  workstation-external-cidr = "${chomp(data.http.workstation-external-ip.response_body)}/32"
-}
-
-variable "aws_region" {
-  default = "us-east-1"
-}
-
-variable "cluster_name" {
-  default = "terraform-eks-demo"
-  type    = string
 }
