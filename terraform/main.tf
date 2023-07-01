@@ -8,31 +8,31 @@ provider "aws" {
 
 data "aws_availability_zones" "available" {}
 
-resource "aws_vpc" "demo" {
+resource "aws_vpc" "vpc_eks" {
   cidr_block = "10.0.0.0/16"
 }
 
-resource "aws_subnet" "demo" {
+resource "aws_subnet" "sub_eks" {
   count = 2
 
   availability_zone       = data.aws_availability_zones.available.names[count.index]
   cidr_block              = "10.0.${count.index}.0/24"
   map_public_ip_on_launch = true
-  vpc_id                  = aws_vpc.demo.id
+  vpc_id                  = aws_vpc.vpc_eks.id
 }
 
-resource "aws_internet_gateway" "demo" {
-  vpc_id = aws_vpc.demo.id
+resource "aws_internet_gateway" "ig_eks" {
+  vpc_id = aws_vpc.vpc_eks.id
 }
 
-resource "aws_route" "rt-aula" {
-  route_table_id         = aws_vpc.demo.main_route_table_id
+resource "aws_route" "rt_eks" {
+  route_table_id         = aws_vpc.vpc_eks.main_route_table_id
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.demo.id
+  gateway_id             = aws_internet_gateway.ig_eks.id
 }
 
-resource "aws_iam_role" "demo-cluster" {
-  name = "terraform-eks-demo-cluster"
+resource "aws_iam_role" "iam_role_eks" {
+  name = "terraform_demo_role_eks"
 
   assume_role_policy = <<POLICY
 {
@@ -50,19 +50,19 @@ resource "aws_iam_role" "demo-cluster" {
 POLICY
 }
 
-resource "aws_iam_role_policy_attachment" "demo-cluster-AmazonEKSClusterPolicy" {
+resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_cluster" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.demo-cluster.name
+  role       = aws_iam_role.iam_role_eks.name
 }
 
-resource "aws_iam_role_policy_attachment" "demo-cluster-AmazonEKSVPCResourceController" {
+resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_controller" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
-  role       = aws_iam_role.demo-cluster.name
+  role       = aws_iam_role.iam_role_eks.name
 }
 
-resource "aws_security_group" "demo-cluster" {
-  name        = "terraform-eks-demo-cluster"
-  vpc_id      = aws_vpc.demo.id
+resource "aws_security_group" "sg_eks" {
+  name   = "sg_eks"
+  vpc_id = aws_vpc.vpc_eks.id
 
   egress {
     from_port   = 0
@@ -72,32 +72,32 @@ resource "aws_security_group" "demo-cluster" {
   }
 }
 
-resource "aws_security_group_rule" "demo-cluster-ingress-workstation-https" {
+resource "aws_security_group_rule" "sgr_eks" {
   cidr_blocks       = ["0.0.0.0/0"]
   from_port         = 443
   protocol          = "tcp"
-  security_group_id = aws_security_group.demo-cluster.id
+  security_group_id = aws_security_group.sg_eks.id
   to_port           = 443
   type              = "ingress"
 }
 
-resource "aws_eks_cluster" "demo" {
-  name     = "terraform-demo-eks"
-  role_arn = aws_iam_role.demo-cluster.arn
+resource "aws_eks_cluster" "eks_demo" {
+  name     = "eks_demo"
+  role_arn = aws_iam_role.iam_role_eks.arn
 
   vpc_config {
-    security_group_ids = [aws_security_group.demo-cluster.id]
-    subnet_ids         = aws_subnet.demo[*].id
+    security_group_ids = [aws_security_group.sg_eks.id]
+    subnet_ids         = aws_subnet.sub_eks[*].id
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.demo-cluster-AmazonEKSClusterPolicy,
-    aws_iam_role_policy_attachment.demo-cluster-AmazonEKSVPCResourceController,
+    aws_iam_role_policy_attachment.iam_role_policy_eks_cluster,
+    aws_iam_role_policy_attachment.iam_role_policy_eks_controller
   ]
 }
 
-resource "aws_iam_role" "demo-node" {
-  name = "terraform-eks-demo-node"
+resource "aws_iam_role" "iam_role_ec2_eks" {
+  name = "iam_role_ec2_eks"
 
   assume_role_policy = <<POLICY
 {
@@ -115,36 +115,36 @@ resource "aws_iam_role" "demo-node" {
 POLICY
 }
 
-resource "aws_iam_role_policy_attachment" "demo-node-AmazonEKSWorkerNodePolicy" {
+resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_node" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
-  role       = aws_iam_role.demo-node.name
+  role       = aws_iam_role.iam_role_ec2_eks.name
 }
 
-resource "aws_iam_role_policy_attachment" "demo-node-AmazonEKS_CNI_Policy" {
+resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_cni" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-  role       = aws_iam_role.demo-node.name
+  role       = aws_iam_role.iam_role_ec2_eks.name
 }
 
-resource "aws_iam_role_policy_attachment" "demo-node-AmazonEC2ContainerRegistryReadOnly" {
+resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_ec2_registry" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-  role       = aws_iam_role.demo-node.name
+  role       = aws_iam_role.iam_role_ec2_eks.name
 }
 
-resource "aws_eks_node_group" "demo" {
-  cluster_name    = aws_eks_cluster.demo.name
+resource "aws_eks_node_group" "eks_node_group" {
+  cluster_name    = aws_eks_cluster.eks_demo.name
   node_group_name = "demo"
-  node_role_arn   = aws_iam_role.demo-node.arn
-  subnet_ids      = aws_subnet.demo[*].id
+  node_role_arn   = aws_iam_role.iam_role_ec2_eks.arn
+  subnet_ids      = aws_subnet.sub_eks[*].id
 
   scaling_config {
-    desired_size = 2 
+    desired_size = 2
     max_size     = 2
     min_size     = 1
   }
 
   depends_on = [
-    aws_iam_role_policy_attachment.demo-node-AmazonEKSWorkerNodePolicy,
-    aws_iam_role_policy_attachment.demo-node-AmazonEKS_CNI_Policy,
-    aws_iam_role_policy_attachment.demo-node-AmazonEC2ContainerRegistryReadOnly,
+    aws_iam_role_policy_attachment.iam_role_policy_eks_node,
+    aws_iam_role_policy_attachment.iam_role_policy_eks_cni,
+    aws_iam_role_policy_attachment.iam_role_policy_eks_ec2_registry
   ]
 }
