@@ -115,6 +115,36 @@ resource "aws_iam_role" "iam_role_ec2_eks" {
 POLICY
 }
 
+resource "aws_iam_policy" "iam_role_ec2_ebs" {
+  name = "iam_role_ec2_ebs"
+
+  policy = <<POLICY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AttachVolume",
+        "ec2:CreateSnapshot",
+        "ec2:CreateTags",
+        "ec2:CreateVolume",
+        "ec2:DeleteSnapshot",
+        "ec2:DeleteTags",
+        "ec2:DeleteVolume",
+        "ec2:DescribeInstances",
+        "ec2:DescribeSnapshots",
+        "ec2:DescribeTags",
+        "ec2:DescribeVolumes",
+        "ec2:DetachVolume"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+POLICY
+}
+
 resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_node" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
   role       = aws_iam_role.iam_role_ec2_eks.name
@@ -127,6 +157,11 @@ resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_cni" {
 
 resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_ec2_registry" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+  role       = aws_iam_role.iam_role_ec2_eks.name
+}
+
+resource "aws_iam_role_policy_attachment" "iam_role_policy_eks_ebs" {
+  policy_arn = aws_iam_policy.iam_role_ec2_ebs.arn
   role       = aws_iam_role.iam_role_ec2_eks.name
 }
 
@@ -145,6 +180,41 @@ resource "aws_eks_node_group" "eks_node_group" {
   depends_on = [
     aws_iam_role_policy_attachment.iam_role_policy_eks_node,
     aws_iam_role_policy_attachment.iam_role_policy_eks_cni,
-    aws_iam_role_policy_attachment.iam_role_policy_eks_ec2_registry
+    aws_iam_role_policy_attachment.iam_role_policy_eks_ec2_registry,
+    aws_iam_role_policy_attachment.iam_role_policy_eks_ebs
   ]
+}
+
+variable "addons" {
+  type = list(object({
+    name    = string
+    version = string
+  }))
+
+  default = [
+    {
+      name    = "kube-proxy"
+      version = "v1.29.0-eksbuild.3"
+    },
+    {
+      name    = "vpc-cni"
+      version = "v1.16.2-eksbuild.1"
+    },
+    {
+      name    = "coredns"
+      version = "v1.11.1-eksbuild.6"
+    },
+    {
+      name    = "aws-ebs-csi-driver"
+      version = "v1.27.0-eksbuild.1"
+    }
+  ]
+}
+
+resource "aws_eks_addon" "addons" {
+  for_each                    = { for addon in var.addons : addon.name => addon }
+  cluster_name                = aws_eks_cluster.eks_demo.id
+  addon_name                  = each.value.name
+  addon_version               = each.value.version
+  resolve_conflicts_on_create = "OVERWRITE"
 }
