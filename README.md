@@ -26,5 +26,5 @@ terraform apply -auto-approve
 Adicionar credenciais do EKS no kubectl local
 
 ```sh
-aws eks --region us-east-1 update-kubeconfig --name eks-demo
+aws eks --region us-east-1 update-kubeconfig --name eks-sample
 ```
