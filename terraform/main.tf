@@ -20,14 +20,14 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  cluster_name = "education-eks"
+  cluster_name = "eks-demo"
 }
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.8.1"
 
-  name = "education-vpc"
+  name = "vpc-demo"
 
   cidr = "10.0.0.0/16"
   azs  = slice(data.aws_availability_zones.available.names, 0, 3)

@@ -1,1 +1,1 @@
-aws eks --region us-east-1 update-kubeconfig --name education-eks
+aws eks --region us-east-1 update-kubeconfig --name eks-demo
